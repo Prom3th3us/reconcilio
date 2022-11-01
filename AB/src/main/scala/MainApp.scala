@@ -17,33 +17,9 @@ import java.time.Instant
 import java.time.temporal.{ChronoUnit, TemporalUnit}
 
 object MainApp extends ZIOAppDefault {
-  def elapsed: IO[String, String] => UIO[Duration] = io => {
-    def now = Instant.now()
-    val before = now
-    io.exitCode.map(_ => Duration.between(before, now))
-  }
-  def isError: IO[String, String] => UIO[Boolean] = io => {
-    io.exitCode.map {
-      case ExitCode.failure => true
-      case ExitCode.success => false
-    }
-  }
+
   case class Result(duration: Duration, isError: Boolean, timestamp: Instant)
 
-  def pepe(config: Config, client: HttpClient): UIO[Result] = {
-    def now = Instant.now()
-    val before = now
-    client.GET( URI.create(config.uri)).exitCode.map{ exitCode =>
-      Result(
-        Duration.between(before, now),
-        exitCode match {
-          case ExitCode.failure => true
-          case ExitCode.success => false
-        }, timestamp = now
-      )
-    }
-
-  }
 
   object Readside {
     case class Second private(instant: Instant) extends AnyVal
@@ -100,7 +76,17 @@ object MainApp extends ZIOAppDefault {
       running <- zio.stream.ZStream.repeatWithSchedule(
         (), Schedule.spaced(Duration.ofMillis(1))
       ).mapZIO{ _ =>
-        pepe(config, client)
+        def now = Instant.now()
+        val before = now
+        client.GET( URI.create(config.uri)).exitCode.map{ exitCode =>
+          Result(
+            Duration.between(before, now),
+            exitCode match {
+              case ExitCode.failure => true
+              case ExitCode.success => false
+            }, timestamp = now
+          )
+        }
       }.
       runForeach{ result => for {
               state <- readsideProyection.get
