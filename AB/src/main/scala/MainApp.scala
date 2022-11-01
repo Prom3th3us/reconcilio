@@ -18,7 +18,7 @@ import java.time.temporal.{ChronoUnit, TemporalUnit}
 
 object MainApp extends ZIOAppDefault {
 
-  case class Result(duration: Duration, isError: Boolean, timestamp: Instant)
+  case class Result(duration: Duration, isError: Boolean, timestamp: Instant = Instant.now)
 
 
   object Readside {
@@ -77,18 +77,26 @@ object MainApp extends ZIOAppDefault {
         (), Schedule.spaced(Duration.ofMillis(1))
       ).mapZIO{ _ =>
         def now = Instant.now()
-        val before = now
-        client.GET( URI.create(config.uri)).exitCode.map{ exitCode =>
-          Result(
-            Duration.between(before, now),
-            exitCode match {
-              case ExitCode.failure => true
-              case ExitCode.success => false
-            }, timestamp = now
-          )
-        }
-      }.
-      runForeach{ result => for {
+        val e = client.GET( URI.create(config.uri))
+
+        def isError: IO[String, String] => UIO[Boolean] =
+          _.exitCode map {
+            case ExitCode.failure => true
+            case ExitCode.success => false
+          }
+
+
+          def duration: IO[String, String] => UIO[Duration] = { io =>
+            val before = now;
+            io.exitCode.map{ _ => Duration.between(before, now)}
+          }
+
+          duration(e)
+            .zipPar(isError(e))
+            .zipPar(ZIO.succeed(Instant.now))
+            .map(Result.tupled)
+      }
+      .runForeach{ result => for {
               state <- readsideProyection.get
               _ <- readsideProyection.set(
                 state.addRequestAt(result)
