@@ -29,13 +29,20 @@ object MainApp extends ZIOAppDefault {
     }
   }
   case class Result(duration: Duration, isError: Boolean, timestamp: Instant)
+
   def pepe(config: Config, client: HttpClient): UIO[Result] = {
-    val e = client.GET( URI.create(config.uri))
-    for {
-      duration <- elapsed(e)
-      isError <- isError(e)
-      timestamp = Instant.now()
-    } yield Result(duration, isError, timestamp)
+    def now = Instant.now()
+    val before = now
+    client.GET( URI.create(config.uri)).exitCode.map{ exitCode =>
+      Result(
+        Duration.between(before, now),
+        exitCode match {
+          case ExitCode.failure => true
+          case ExitCode.success => false
+        }, timestamp = now
+      )
+    }
+
   }
 
   object Readside {
